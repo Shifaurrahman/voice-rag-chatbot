@@ -1,12 +1,12 @@
 import './App.css';
-//import RAGChatbot from './RAGChatbot';
 import RAGVoiceChatbot from './RAGVoiceChatbot';
+//import RAGVoiceSample from './RAGVoiceChatbot';
 
 function App() {
   return (
     <div className="App">
       
-      {/* <RAGChatbot /> */}
+      {/* <RAGVoiceSample /> */}
       <RAGVoiceChatbot />
     </div>
   );
