@@ -1,24 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, MessageCircle, Loader2, AlertCircle, CheckCircle, Mic, MicOff, Volume2, StopCircle, Key } from 'lucide-react';
+import { Send, MessageCircle, Loader2, AlertCircle, CheckCircle, Mic, MicOff, Volume2, StopCircle } from 'lucide-react';
 
 const RAGVoiceChatbot = () => {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [apiHealth, setApiHealth] = useState(null);
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKeyInput, setShowApiKeyInput] = useState(true);
-  
-  // Hardcoded values
-  const apiUrl = 'http://localhost:8000';
-  const topK = 3;
+  const [topK, setTopK] = useState(3);
+  const [apiUrl, setApiUrl] = useState('http://localhost:8000');
   
   // Voice-related states
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessingVoice, setIsProcessingVoice] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState('alloy');
   const [recordingTime, setRecordingTime] = useState(0);
-  const [micPermission, setMicPermission] = useState('prompt');
+  const [micPermission, setMicPermission] = useState('prompt'); // 'granted', 'denied', 'prompt'
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -36,7 +32,7 @@ const RAGVoiceChatbot = () => {
       console.error('Health check failed:', error);
       setApiHealth({ status: 'error', message: 'Cannot connect to API' });
     }
-  }, []);
+  }, [apiUrl]);
 
   useEffect(() => {
     checkApiHealth();
@@ -66,7 +62,7 @@ const RAGVoiceChatbot = () => {
   };
 
   const sendMessage = async () => {
-    if (!inputValue.trim() || isLoading || !apiKey) return;
+    if (!inputValue.trim() || isLoading) return;
 
     const userMessage = {
       id: Date.now(),
@@ -85,7 +81,6 @@ const RAGVoiceChatbot = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': apiKey
         },
         body: JSON.stringify({
           query: inputValue,
@@ -107,10 +102,10 @@ const RAGVoiceChatbot = () => {
         isVoice: false,
         metadata: {
           question: data.question,
-          //sources: data.sources || [],
+          sources: data.sources || [],
           confidence: data.confidence || 0,
           processingTime: data.processing_time_ms || 0,
-          //totalSources: data.total_sources || 0
+          totalSources: data.total_sources || 0
         }
       };
 
@@ -130,11 +125,6 @@ const RAGVoiceChatbot = () => {
   };
 
   const startRecording = async () => {
-    if (!apiKey) {
-      alert('Please enter your OpenAI API key first.');
-      return;
-    }
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       setMicPermission('granted');
@@ -159,6 +149,7 @@ const RAGVoiceChatbot = () => {
       setIsRecording(true);
       setRecordingTime(0);
 
+      // Start timer
       recordingIntervalRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
@@ -182,6 +173,7 @@ const RAGVoiceChatbot = () => {
   const sendVoiceMessage = async (audioBlob) => {
     setIsProcessingVoice(true);
 
+    // Create audio URL for user's recording
     const userAudioUrl = URL.createObjectURL(audioBlob);
 
     const userMessage = {
@@ -190,7 +182,7 @@ const RAGVoiceChatbot = () => {
       content: '🎤 Voice message (transcribing...)',
       timestamp: new Date(),
       isVoice: true,
-      audioUrl: userAudioUrl
+      audioUrl: userAudioUrl // Store user's audio
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -201,9 +193,6 @@ const RAGVoiceChatbot = () => {
 
       const response = await fetch(`${apiUrl}/ask-voice?top_k=${topK}&voice=${selectedVoice}`, {
         method: 'POST',
-        headers: {
-          'X-API-Key': apiKey
-        },
         body: formData
       });
 
@@ -211,15 +200,18 @@ const RAGVoiceChatbot = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
+      // Get transcription from headers
       const transcribedQuery = response.headers.get('X-Transcribed-Query');
       const answerText = response.headers.get('X-Answer-Text');
 
+      // Update user message with transcription (keep audio URL)
       setMessages(prev => prev.map(msg => 
         msg.id === userMessage.id 
           ? { ...msg, content: `🎤 "${transcribedQuery}"` }
           : msg
       ));
 
+      // Get audio response
       const audioResponseBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioResponseBlob);
 
@@ -237,6 +229,7 @@ const RAGVoiceChatbot = () => {
 
       setMessages(prev => [...prev, botMessage]);
 
+      // Auto-play the response
       const audio = new Audio(audioUrl);
       audio.play().catch(err => console.error('Error playing audio:', err));
 
@@ -271,13 +264,6 @@ const RAGVoiceChatbot = () => {
 
   const clearChat = () => {
     setMessages([]);
-  };
-
-  const handleApiKeySubmit = () => {
-    if (apiKey.trim()) {
-      setShowApiKeyInput(false);
-      checkApiHealth();
-    }
   };
 
   return (
@@ -315,48 +301,23 @@ const RAGVoiceChatbot = () => {
             </div>
           </div>
 
-          {/* API Key Input */}
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2 text-gray-700">
-                <Key className="w-4 h-4" />
-                <label className="text-sm font-medium">OpenAI API Key:</label>
-              </div>
-              {showApiKeyInput ? (
-                <div className="flex items-center space-x-2 flex-1">
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleApiKeySubmit()}
-                    placeholder="sk-..."
-                    className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                  <button
-                    onClick={handleApiKeySubmit}
-                    disabled={!apiKey.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                  >
-                    Save
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm text-green-600 font-medium">✓ API Key Set</span>
-                  <button
-                    onClick={() => setShowApiKeyInput(true)}
-                    className="text-sm text-blue-600 hover:text-blue-700 underline"
-                  >
-                    Change
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* Settings */}
           <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
             <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Top-K:</label>
+                <select
+                  value={topK}
+                  onChange={(e) => setTopK(Number(e.target.value))}
+                  className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value={1}>1</option>
+                  <option value={3}>3</option>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                </select>
+              </div>
+
               <div className="flex items-center space-x-2">
                 <label className="text-sm font-medium text-gray-700">Voice:</label>
                 <select
@@ -368,6 +329,17 @@ const RAGVoiceChatbot = () => {
                     <option key={voice} value={voice}>{voice}</option>
                   ))}
                 </select>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">API:</label>
+                <input
+                  type="text"
+                  value={apiUrl}
+                  onChange={(e) => setApiUrl(e.target.value)}
+                  className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"
+                  placeholder="http://localhost:8000"
+                />
               </div>
             </div>
             
@@ -402,11 +374,7 @@ const RAGVoiceChatbot = () => {
               <MessageCircle className="w-16 h-16 mb-4 opacity-20" />
               <p className="text-lg mb-2">Welcome to RAG Chatbot!</p>
               <p className="text-sm text-center max-w-md">
-                {!apiKey ? (
-                  <>Please enter your OpenAI API key above to start chatting.</>
-                ) : (
-                  <>Ask questions using text or voice. I'll search through your documents and provide direct answers.</>
-                )}
+                Ask questions using text or voice. I'll search through your documents and provide answers with citations.
               </p>
               <div className="mt-4 flex items-center space-x-2 text-xs text-gray-400">
                 <Mic className="w-4 h-4" />
@@ -426,6 +394,7 @@ const RAGVoiceChatbot = () => {
                   }`}>
                     <div className="whitespace-pre-wrap">{message.content}</div>
                     
+                    {/* Audio player for voice responses */}
                     {message.audioUrl && (
                       <div className="mt-2">
                         <button
@@ -468,6 +437,7 @@ const RAGVoiceChatbot = () => {
 
         {/* Input Area */}
         <div className="bg-white border-t border-gray-200 px-6 py-4 rounded-b-lg mb-4">
+          {/* Recording indicator */}
           {isRecording && (
             <div className="mb-3 flex items-center justify-center space-x-2 text-red-600 animate-pulse">
               <div className="w-3 h-3 bg-red-600 rounded-full"></div>
@@ -481,25 +451,24 @@ const RAGVoiceChatbot = () => {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && !isRecording && sendMessage()}
-              placeholder={!apiKey ? "Please enter your API key first..." : "Ask a question about your documents..."}
+              placeholder="Ask a question about your documents..."
               className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={isLoading || isRecording || apiHealth?.status !== 'healthy' || !apiKey}
+              disabled={isLoading || isRecording || apiHealth?.status !== 'healthy'}
             />
             
+            {/* Voice button */}
             <button
               onClick={isRecording ? stopRecording : startRecording}
-              disabled={isProcessingVoice || apiHealth?.status !== 'healthy' || micPermission === 'denied' || !apiKey}
+              disabled={isProcessingVoice || apiHealth?.status !== 'healthy' || micPermission === 'denied'}
               className={`${
                 isRecording 
                   ? 'bg-red-600 hover:bg-red-700' 
-                  : micPermission === 'denied' || !apiKey
+                  : micPermission === 'denied'
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-purple-600 hover:bg-purple-700'
               } text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors`}
               title={
-                !apiKey
-                  ? 'Enter API key first'
-                  : micPermission === 'denied' 
+                micPermission === 'denied' 
                   ? 'Microphone access denied' 
                   : isRecording 
                   ? 'Stop recording' 
@@ -524,9 +493,10 @@ const RAGVoiceChatbot = () => {
               )}
             </button>
             
+            {/* Send button */}
             <button
               onClick={sendMessage}
-              disabled={isLoading || isRecording || !inputValue.trim() || apiHealth?.status !== 'healthy' || !apiKey}
+              disabled={isLoading || isRecording || !inputValue.trim() || apiHealth?.status !== 'healthy'}
               className="bg-blue-600 text-white rounded-lg px-6 py-3 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
             >
               {isLoading ? (
