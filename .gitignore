@@ -16,6 +16,7 @@ eggs/
 .eggs/
 lib/
 lib64/
+node_modules/
 parts/
 sdist/
 var/
@@ -143,6 +144,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv/
+env/
+venv/
 
 # Spyder project settings
 .spyderproject
